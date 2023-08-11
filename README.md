@@ -44,11 +44,10 @@ Use steps 1-3 in GoDMC pipeline. Separate clone for each cell type.
 Use specific scripts in /resources/ folder for each cloned pipeline repository
 
 ### Comparison
-- Does the bulk + interaction model reproduce the effects in 'cell-sorted model'?
-- Does predicted cell count vs observed cell count make a difference for 'bulk + interaction model'
-- Do the GoDMC hits have different effects in different cell types?
-- Do the cis-trans incompatibilities in MR get explained by cell types?
-- MR on immune diseases
+- Are the GoDMC SNP-CpG pairs replicating in bulk+int?
+- Are the GoDMC SNP-CpG pairs replicating in cell-specific? 
+- Discovery in bulk+int replicating in cell-specific?
+- Discovery in cell-specific replicating in bulk?
   
 ```
 Rscript Compare_mQTLmodels.Rmd

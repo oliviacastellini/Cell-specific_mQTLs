@@ -83,10 +83,10 @@ clumped2 <- standardise(clumped, "Allele2", "Allele1", "Effect", "snpchr", "snpp
 # Initialize an empty data frame to store the results
 merged_data <- data.frame()
 
-# Loop through 100 chunks of neu data
+# Loop through 7 chunks of cell data
 for (i in 1:7) {
   # Read in the current chunk
-  chunk_file <- paste0("/user/home/uy23281/model4/neu/EPIC_mQTL/results/05/SortedNeu.res.cis.", i, ".RData")
+  chunk_file <- paste0("/home/uy23281/model4/neu/EPIC_mQTL/results/05/SortedNeu.res.cis.", i, ".RData")
   cell <- fread(chunk_file)
 
   # Subset the current chunk based on the clumped$cpg values

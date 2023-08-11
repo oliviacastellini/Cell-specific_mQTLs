@@ -43,14 +43,14 @@ Use steps 1-3 in GoDMC pipeline. Separate clone for each cell type.
 
 Use specific scripts in /resources/ folder for each cloned pipeline repository
 
-### Comparison
+### Replication
 - Are the GoDMC SNP-CpG pairs replicating in bulk+int?
 - Are the GoDMC SNP-CpG pairs replicating in cell-specific? 
 - Discovery in bulk+int replicating in cell-specific?
 - Discovery in cell-specific replicating in bulk?
   
 ```
-Rscript Compare_mQTLmodels.Rmd
+Rscript Replicate_mQTLmodels.Rmd
 ```
 
 

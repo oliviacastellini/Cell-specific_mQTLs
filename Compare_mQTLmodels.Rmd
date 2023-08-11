@@ -71,7 +71,7 @@ repl_obs_exp <- function(b_disc, b_rep, se_disc, se_rep, alpha) {
 }
 
 # Read in clumped
-load("16_clumped.rdata")
+load("/user/home/uy23281/16_clumped.rdata")
 
 # Organise data
 clumped <- ungroup(clumped)
@@ -86,26 +86,26 @@ merged_data <- data.frame()
 # Loop through 100 chunks of neu data
 for (i in 1:7) {
   # Read in the current chunk
-  chunk_file <- paste0("/home/uy23281/Neu_mQTL/sorted/EPIC_mQTL/results/05/SortedNeu.res.cis.", i, ".RData")
-  neu <- fread(chunk_file)
+  chunk_file <- paste0("/user/home/uy23281/model4/neu/EPIC_mQTL/results/05/SortedNeu.res.cis.", i, ".RData")
+  cell <- fread(chunk_file)
 
   # Subset the current chunk based on the clumped$cpg values
-  neu <- subset(neu, gene %in% clumped$cpg)
+  cell <- subset(neu, gene %in% clumped$cpg)
 
   # Separate SNP column into chr and pos
-  neu <- neu %>% tidyr::separate(SNP, sep = ":", into = c("chr", "pos"))
+  cell <- cell  %>% tidyr::separate(SNP, sep = ":", into = c("chr", "pos"))
 
   # Separate pos column into pos, a1, and a2
-  neu <- neu %>% tidyr::separate(pos, sep = "_", into = c("pos", "a1", "a2"))
+  cell <- cell %>% tidyr::separate(pos, sep = "_", into = c("pos", "a1", "a2"))
 
   # Standardize neu data
-  neu2 <- standardise(neu, "a1", "a2", "beta", "chr", "pos")
+  cell2 <- standardise(neu, "a1", "a2", "beta", "chr", "pos")
 
   # Merge with clumped2 data
-  m <- inner_join(clumped2, neu2, by = c("snpid", "cpg" = "gene"))
+  m <- inner_join(clumped2, cell2, by = c("snpid", "cpg" = "gene"))
 
-  # Calculate se_neu
-  m$se_neu <- m$beta / m$`t-stat`
+  # Calculate standard error
+  m$se_cell <- m$beta / m$`t-stat`
 
   # Append the current chunk's data to the merged_data
   if (i == 1) {

@@ -4,7 +4,7 @@
 
 - Project document: https://docs.google.com/document/d/1nfo-oH2fhhFgFX3g32FkXf0iXA1ICXOms1ylqHheYb8/edit?pli=1
 - RDSF location: /projects/MRC-IEU/research/projects/ieu3/p4/003
-- BC4 location: /user/uy23281/scratch
+- BC4 location: /user/home/uy23281/scratch
 - epifranklin location: /home/uy23281
 
 

@@ -71,7 +71,7 @@ repl_obs_exp <- function(b_disc, b_rep, se_disc, se_rep, alpha) {
 }
 
 # Read in clumped
-load("/user/home/uy23281/16_clumped.rdata")
+load("/home/uy23281/16_clumped.rdata")
 
 # Organise data
 clumped <- ungroup(clumped)
@@ -83,14 +83,18 @@ clumped2 <- standardise(clumped, "Allele2", "Allele1", "Effect", "snpchr", "snpp
 # Initialize an empty data frame to store the results
 merged_data <- data.frame()
 
+#Read standard deviation file 
+sds<-read.table("/home/uy23281/model4/neu/EPIC_mQTL/input/sd.methy_neu.txt",header=T,sep="\t")
+
 # Loop through 7 chunks of cell data
 for (i in 1:7) {
   # Read in the current chunk
   chunk_file <- paste0("/home/uy23281/model4/neu/EPIC_mQTL/results/05/SortedNeu.res.cis.", i, ".RData")
   cell <- fread(chunk_file)
+  cell<-left_join(cell,sds,by=c("gene","cpg"))
 
   # Subset the current chunk based on the clumped$cpg values
-  cell <- subset(neu, gene %in% clumped$cpg)
+  cell <- subset(cell, gene %in% clumped$cpg)
 
   # Separate SNP column into chr and pos
   cell <- cell  %>% tidyr::separate(SNP, sep = ":", into = c("chr", "pos"))
@@ -98,14 +102,14 @@ for (i in 1:7) {
   # Separate pos column into pos, a1, and a2
   cell <- cell %>% tidyr::separate(pos, sep = "_", into = c("pos", "a1", "a2"))
 
-  # Standardize neu data
-  cell2 <- standardise(neu, "a1", "a2", "beta", "chr", "pos")
+  # Standardize cell data
+  cell2 <- standardise(cell, "a1", "a2", "beta", "chr", "pos")
 
   # Merge with clumped2 data
   m <- inner_join(clumped2, cell2, by = c("snpid", "cpg" = "gene"))
 
   # Calculate standard error
-  m$se_cell <- m$beta / m$`t-stat`
+  m$se <- m$beta / m$`t-stat`
 
   # Append the current chunk's data to the merged_data
   if (i == 1) {
@@ -128,7 +132,9 @@ table(merged_data$`p-value` < 0.05) %>% prop.table
 
 ## Look at replication rate (observed vs expected)
 ```{r, echo=FALSE}
-repl_obs_exp(merged_data$Effect, merged_data$beta, merged_data$StdErr, merged_data$se_neu, 5e-6)
+repl<-repl_obs_exp(merged_data$Effect, merged_data$beta, merged_data$StdErr, merged_data$se, 5e-6)
+write.table(repl,"/home/uy23281/model4/neu/EPIC_mQTL/results/repl_obs_exp.txt",quote=F)
+repl
 ```
 ## Plot
 ```{r, echo=FALSE}

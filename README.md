@@ -49,8 +49,9 @@ Use specific scripts in /resources/ folder for each cloned pipeline repository
 - Do the GoDMC hits have different effects in different cell types?
 - Do the cis-trans incompatibilities in MR get explained by cell types?
 - MR on immune diseases
-
+  
+```
 Rscript Compare_mQTLmodels.Rmd
-
+```
 
 

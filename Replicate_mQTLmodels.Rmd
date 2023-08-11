@@ -1,5 +1,5 @@
 ---
-title: "Comparison of mQTLs associations across contexts"
+title: "Replication of mQTLs associations across contexts"
 author: Olivia Castellini-Pérez
 date: August 9, 2023
 abstract: ""

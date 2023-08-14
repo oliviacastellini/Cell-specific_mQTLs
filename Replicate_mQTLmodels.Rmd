@@ -92,19 +92,16 @@ clumped2 <- standardise(clumped, "Allele2", "Allele1", "Effect", "snpchr", "snpp
 ```{r, include=FALSE}
 ##Loop to read and process all 100 chunks 
 # Initialize an empty data frame to store the results
-
 merged_data <- data.frame()
 cell.list<-c("neu","mono","tcell","bcell")
-
 #Create an empty list to store data frames and plots 
 results_list <- list()
 plots_list <- list()
 prop_table_list <- list()
 repl_list <- list()
-
 #Loop through cell types
 for (n in 1:length(cell.list)){
-# Read standard deviation file
+# Read standard deviation file 
 sds<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model4/",cell.list[n],"/sd.methy.txt"),header=T,sep="\t")
 # Loop through 7 chunks of cell data
 for (i in 1:7) {
@@ -144,11 +141,12 @@ fitted <- summary(full)$coefficients
 result_df <- data.frame(CellType = cell.list[n], Beta = fitted[2, 1], SE = fitted[2, 2],
                         PValue = fitted[2, 4])
 #2 Overall replication rate
-prop_table <- table(m$`p-value` < 0.05) %>% prop.table()
+prop_table <- table(merged_data$`p-value` < 0.05) %>% prop.table()
 prop_table_df <- data.frame(CellType = cell.list[n], PropTable = prop_table)
 
 #3 Replication rate 
-repl <- repl_obs_exp(m$Effect, m$beta, m$StdErr, m$se, 5e-6)
+repl <- repl_obs_exp(merged_data$Effect, merged_data$beta, merged_data$StdErr, merged_data$se, 5e-6)
+repl<-as.data.frame(repl$res)
 repl_df <- data.frame(CellType = cell.list[n], Repl = repl)
   
 #Save the different data frames 
@@ -157,7 +155,7 @@ prop_table_list[[n]] <- prop_table_df
 repl_list[[n]] <- repl_df
 
 # 4 Plots
-plot <- ggplot(m, aes(x = beta, y = Effect)) +
+plot <- ggplot(merged_data, aes(x = beta, y = Effect)) +
     geom_point() +
     labs(title = paste("GoDMC effect vs model 4 effect for", cell.list[n]))
   

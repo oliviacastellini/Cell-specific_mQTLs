@@ -91,7 +91,7 @@ for (i in 1:7) {
   # Read in the current chunk
   chunk_file <- paste0("/home/uy23281/model4/neu/EPIC_mQTL/results/05/SortedNeu.res.cis.", i, ".RData")
   cell <- fread(chunk_file)
-  cell<-left_join(cell,sds,by=c("gene","cpg"))
+  cell <- left_join(cell, sds, by = c("gene" = "cpg"))
 
   # Subset the current chunk based on the clumped$cpg values
   cell <- subset(cell, gene %in% clumped$cpg)

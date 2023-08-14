@@ -22,7 +22,7 @@ knitr::opts_chunk$set(echo = TRUE)
 (4) n=overlap(~60), data=cell-specific, model=main, cell-type=x4(sorted), region=cis
 (5) n=overlap(~60), data=bulk, model=interaction, cell-type=x4(the same as sorted), region=cis
 
-## Samples
+# Samples
 
 |   Model   |Cell type |    N     |
 |-----------|----------|----------|
@@ -38,7 +38,14 @@ knitr::opts_chunk$set(echo = TRUE)
 | (4) & (5) |  Tcells  |    70    |
 |           |  Bcells  |    45    |
 
-## Comparisons 
+# Replication
+
+1. Are the GoDMC SNP-CpG pairs replicating in bulk+int?
+2. Are the GoDMC SNP-CpG pairs replicating in cell-specific? 
+3. Discovery in bulk+int replicating in cell-specific?  
+4. Discovery in cell-specific replicating in bulk?
+
+## GoDMC SNP-CpG pairs replication
 
 ```{r, include=FALSE}
 library(dplyr)
@@ -71,25 +78,38 @@ repl_obs_exp <- function(b_disc, b_rep, se_disc, se_rep, alpha) {
 }
 
 # Read in clumped
-load("/home/uy23281/16_clumped.rdata")
+load("/user/home/uy23281/scratch/16_clumped.rdata")
 
 # Organise data
 clumped <- ungroup(clumped)
 clumped$snpchr <- gsub("chr", "", clumped$snpchr)
 clumped2 <- standardise(clumped, "Allele2", "Allele1", "Effect", "snpchr", "snppos")
 
+```
 
+### Model 4 
+#### Relationship between GoDMC effect and cell interaction model 4 
+```{r, include=FALSE}
 ##Loop to read and process all 100 chunks 
 # Initialize an empty data frame to store the results
+
 merged_data <- data.frame()
+cell.list<-c("neu","mono","tcell","bcell")
 
-#Read standard deviation file 
-sds<-read.table("/home/uy23281/model4/neu/EPIC_mQTL/input/sd.methy_neu.txt",header=T,sep="\t")
+#Create an empty list to store data frames and plots 
+results_list <- list()
+plots_list <- list()
+prop_table_list <- list()
+repl_list <- list()
 
+#Loop through cell types
+for (n in 1:length(cell.list)){
+# Read standard deviation file
+sds<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model4/",cell.list[n],"/sd.methy.txt"),header=T,sep="\t")
 # Loop through 7 chunks of cell data
 for (i in 1:7) {
   # Read in the current chunk
-  chunk_file <- paste0("/home/uy23281/model4/neu/EPIC_mQTL/results/05/SortedNeu.res.cis.", i, ".RData")
+  chunk_file <- paste0("/user/home/uy23281/scratch/rmd.results/model4/",cell.list[n],"/res.cis.", i, ".gz")
   cell <- fread(chunk_file)
   cell <- left_join(cell, sds, by = c("gene" = "cpg"))
 
@@ -118,29 +138,69 @@ for (i in 1:7) {
     merged_data <- rbind(merged_data, m)
   }
 }
+# 1 Relationship between the effects
+full <- lm(Effect ~ beta, data = merged_data)
+fitted <- summary(full)$coefficients
+result_df <- data.frame(CellType = cell.list[n], Beta = fitted[2, 1], SE = fitted[2, 2],
+                        PValue = fitted[2, 4])
+#2 Overall replication rate
+prop_table <- table(m$`p-value` < 0.05) %>% prop.table()
+prop_table_df <- data.frame(CellType = cell.list[n], PropTable = prop_table)
+
+#3 Replication rate 
+repl <- repl_obs_exp(m$Effect, m$beta, m$StdErr, m$se, 5e-6)
+repl_df <- data.frame(CellType = cell.list[n], Repl = repl)
+  
+#Save the different data frames 
+results_list[[n]] <- result_df
+prop_table_list[[n]] <- prop_table_df
+repl_list[[n]] <- repl_df
+
+# 4 Plots
+plot <- ggplot(m, aes(x = beta, y = Effect)) +
+    geom_point() +
+    labs(title = paste("GoDMC effect vs model 4 effect for", cell.list[n]))
+  
+plots_list[[n]] <- plot
+}
+
+results_df <- do.call(rbind, results_list)
+results_df<-as.data.table(results_df)
+##  r function for formatting p-values
+
+format.pvalue <- function(x) {
+    formatted.x <- ifelse(x > 0.01,
+                          formatC(x, digits = 2, format = "f"),
+                          formatC(x, digits = 0))
+    return(formatted.x)
+}
+results_df[, PValue := format.pvalue(PValue)]
+results_df[, Beta := formatC(Beta, digits = 4, format = "f")]
+results_df[, SE := formatC(SE, digits = 4, format = "f")]
+
+#Save the plot 
+grid_plots <- grid.arrange(grobs = plots_list, ncol = 2, nrow = 2)
+ggsave(filename = "/user/home/uy23281/scratch/rmd.results/model4/Effect.plot.png", plot = grid_plots)
 ```
 
 ## Look at relationship between effects
-```{r, echo=FALSE}
-summary(lm(Effect ~ beta, merged_data))
+```{r results_df, echo=FALSE}
+knitr::kable(results_df, format="latex",digits=5,booktabs=T,
+             col.names=c("Cell type","beta","SE","P-value"),align = "c",
+             caption='\\textbf{Linear model results for the relationship between GoDMC and model 4 effects}')
 ```
 
 ## Look at overall replication rate
-```{r, echo=FALSE}
-table(merged_data$`p-value` < 0.05) %>% prop.table
+```{r prop_table_df, echo=FALSE}
+print(prop_table_df)
 ```
 
 ## Look at replication rate (observed vs expected)
-```{r, echo=FALSE}
-repl<-repl_obs_exp(merged_data$Effect, merged_data$beta, merged_data$StdErr, merged_data$se, 5e-6)
-write.table(repl,"/home/uy23281/model4/neu/EPIC_mQTL/results/repl_obs_exp.txt",quote=F)
-repl
+```{r repl_df, echo=FALSE}
+print(repl_df)
 ```
 ## Plot
-```{r, echo=FALSE}
-plot(Effect ~ beta, merged_data)
+```{r plot, fig.align="center",fig.cap=c("GoDMC effect versus model 4 effect", echo=FALSE}
+knitr::include_graphics("/user/home/uy23281/scratch/rmd.results/model4/Effect.plot.png")
+
 ```
-
-
-
-

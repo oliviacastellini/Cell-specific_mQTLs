@@ -51,6 +51,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(data.table)
 library(tidyr)
+library(ggplot)
 ```
 
 ```{r, include=FALSE}

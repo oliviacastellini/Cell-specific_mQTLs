@@ -200,7 +200,7 @@ print(prop_table_df)
 print(repl_df)
 ```
 ## Plot
-```{r plot, fig.align="center",fig.cap=c("GoDMC effect versus model 4 effect", echo=FALSE}
+```{r plot, fig.align="center",fig.cap=c("GoDMC effect versus model 4 effect"), echo=FALSE}
 knitr::include_graphics("/user/home/uy23281/scratch/rmd.results/model4/Effect.plot.png")
 
 ```

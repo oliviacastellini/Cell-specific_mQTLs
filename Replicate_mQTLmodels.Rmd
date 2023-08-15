@@ -159,7 +159,7 @@ repl_list[[n]] <- repl_df
 # 4 Plots
 plot <- ggplot(merged_data, aes(x = beta, y = Effect)) +
     geom_point() +
-    labs(title = paste("GoDMC effect vs model 4 effect for", cell.list[n]))
+    labs(title = paste0("GoDMC effect vs model 4 effect for", cell.list[n]))
   
 plots_list[[n]] <- plot
 }

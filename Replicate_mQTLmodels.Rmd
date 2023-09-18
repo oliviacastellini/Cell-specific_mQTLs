@@ -6,10 +6,10 @@ abstract: ""
 output:  
   bookdown::pdf_book:
   keep_tex: true
-  fig_caption: yes
-  toc: true
+fig_caption: yes
+toc: true
 ---
-
+  
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -24,46 +24,49 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Samples
 
-|   Model   |Cell type |    N     |
-|-----------|----------|----------|
-| (1) & (2) |   All    |   1,086  |
-|-----------|----------|----------|
-|           |   Neu    |    158   |
-|           |   Mono   |    141   |
-|   (3)     |  Tcells  |    159   |
-|           |  Bcells  |    100   |
-|-----------|----------|----------|
-|           |   Neu    |    75    |
-|           |   Mono   |    60    |
-| (4) & (5) |  Tcells  |    70    |
-|           |  Bcells  |    45    |
-
+  |   Model   |Cell type |    N     |
+  |-----------|----------|----------|
+  | (1) & (2) |   All    |   1,086  |
+  |-----------|----------|----------|
+  |           |   Neu    |    158   |
+  |           |   Mono   |    141   |
+  |   (3)     |  Tcells  |    159   |
+  |           |  Bcells  |    100   |
+  |-----------|----------|----------|
+  |           |   Neu    |    75    |
+  |           |   Mono   |    60    |
+  | (4) & (5) |  Tcells  |    70    |
+  |           |  Bcells  |    45    |
+  
 # Replication
-
-1. Are the GoDMC SNP-CpG pairs replicating in bulk+int?
-2. Are the GoDMC SNP-CpG pairs replicating in cell-specific? 
-3. Discovery in bulk+int replicating in cell-specific?  
-4. Discovery in cell-specific replicating in bulk?
-
+  
+  1. Are the GoDMC SNP-CpG pairs replicating in bulk+int?
+  2. Are the GoDMC SNP-CpG pairs replicating in cell-specific? 
+  3. Discovery in bulk+int replicating in cell-specific?  
+  4. Discovery in cell-specific replicating in bulk?
+  
 ## GoDMC SNP-CpG pairs replication
-
+  
 ```{r, include=FALSE}
 library(dplyr)
 library(data.table)
 library(tidyr)
 library(ggplot2)
 library(gridExtra)
+library(epiR)
+library(stats)
+library(car)
 ```
 
 ```{r, include=FALSE}
 standardise <- function(d, ea="ea", oa="oa", beta="beta", chr="chr", pos="pos") {
-    toflip <- d[[ea]] > d[[oa]]
-    d[[beta]][toflip] <- d[[beta]][toflip] * -1
-    temp <- d[[oa]][toflip]
-    d[[oa]][toflip] <- d[[ea]][toflip]
-    d[[ea]][toflip] <- temp
-    d[["snpid"]] <- paste0(d[[chr]], ":", d[[pos]], "_", toupper(d[[ea]]), "_", toupper(d[[oa]]))
-    d
+  toflip <- d[[ea]] > d[[oa]]
+  d[[beta]][toflip] <- d[[beta]][toflip] * -1
+  temp <- d[[oa]][toflip]
+  d[[oa]][toflip] <- d[[ea]][toflip]
+  d[[ea]][toflip] <- temp
+  d[["snpid"]] <- paste0(d[[chr]], ":", d[[pos]], "_", toupper(d[[ea]]), "_", toupper(d[[oa]]))
+  d
 }
 
 repl_obs_exp <- function(b_disc, b_rep, se_disc, se_rep, alpha) {
@@ -89,8 +92,98 @@ clumped2 <- standardise(clumped, "Allele2", "Allele1", "Effect", "snpchr", "snpp
 
 ```
 
-### Model 4 
-#### Relationship between GoDMC effect and cell interaction model 4 
+# Results
+## Replication between model 1 (interaction model with predicted cell counts) and model 2 (interaction model with observed cell counts)
+```{r, include=FALSE}
+cell_types<-c("neu","mono","tcell","bcell")
+
+# Initialize empty lists to store results
+correlation_results <- vector("numeric", length(cell_types))
+ccc_results <- vector("numeric", length(cell_types))
+significant_overlap <- vector("numeric", length(cell_types))
+plots_list <- list()
+
+# Loop through each cell type
+for (i in 1:length(cell_types)) {
+    # Extract data for the current cell type from both models
+  for (n in 1:7) {
+    model1<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model1/",cell_types[i],"/res.cis.", n, ".gz"))
+    if (n == 1) {
+      model1_merged <- model1
+    } else {
+      model1_merged <- rbind(model1_merged, model1)
+    }
+  }
+model1_merged<-model1_merged[-1,]
+colnames(model1_merged)<-c("SNP","cpg","beta","t","P","FDR")
+model1_merged$beta<-as.numeric(as.character(model1_merged$beta))
+
+  for (n in 1:7) {
+     model2<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model2/",cell_types[i],"/res.cis.", n, ".gz"))
+     if (n == 1) {
+      model2_merged <- model2
+    } else {
+      model2_merged <- rbind(model2_merged, model2)
+    }
+  }
+model2_merged<-model2_merged[-1,]
+colnames(model2_merged)<-c("SNP","cpg","beta","t","P","FDR")
+model2_merged$beta<-as.numeric(as.character(model2_merged$beta))
+  
+
+# Perform correlation analysis
+    correlation_results[i] <- cor(model1_merged$beta,model2_merged$beta)
+    
+# Perform concordance analysis
+    ccc <- epi.ccc(model1_merged$beta, model2_merged$beta)
+    ccc_results[i] <- ccc$rho.c
+    
+# Count overlapping significant mQTLs
+    significant_overlap[i] <- sum(model1_merged$P < 0.05 & model2_merged$P < 0.05)
+    
+# Plot
+model1_merged<-model1_merged[order(model1_merged$P),]
+model2_merged<-model2_merged[order(model2_merged$P),]
+subset_m1<-model1_merged[1:10000,]
+subset_m2<-model2_merged[1:10000,]
+    
+plot1<-plot(subset_m1$beta, subset_m2$beta, xlab = paste0("Model 1 Effect Size (",cell_types[i],")"), ylab = paste0("Model 2 Effect Size (",cell_types[i],")"))
+abline(a = 0, b = 1, col = "red")
+
+plots_list[[n]] <- plot1
+}
+# Create data frames to store the results
+correlation_df <- data.frame(Cell_Type = cell_types, Correlation = correlation_results)
+ccc_df <- data.frame(Cell_Type = cell_types, CCC = ccc_results)
+overlap_df <- data.frame(Cell_Type = cell_types, Significant_Overlap = significant_overlap)
+
+#Save the plot 
+grid_plots <- grid.arrange(grobs = plots_list, ncol = 2, nrow = 2)
+ggsave(filename = "/user/home/uy23281/scratch/rmd.results/model1/Effect_plot_m1vsm2.png", plot = grid_plots)
+```
+
+### Correlation 
+```{r correlation_df, echo=FALSE}
+print(correlation_df)
+```
+
+### Concordance analysis  
+```{r ccc_df, echo=FALSE}
+print(ccc_df)
+```
+
+### Overlapping significant mQTLs  
+```{r significant_overlap, echo=FALSE}
+print(significant_overlap)
+```
+
+### Plots
+```{r plot1, out.width="80%", fig.align="center",fig.cap=c("Model 1 effect versus model 2 effect"), echo=FALSE}
+knitr::include_graphics("/user/home/uy23281/scratch/rmd.results/model1/Effect_plot_m1vsm2.png")
+
+```
+
+## Relationship between GoDMC and model 4 (cell-sorted model) effects
 ```{r, include=FALSE}
 ##Loop to read and process all 100 chunks 
 # Initialize an empty data frame to store the results
@@ -107,71 +200,80 @@ for (n in 1:length(cell.list)){
 sds<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model4/",cell.list[n],"/sd.methy.txt"),header=T,sep="\t")
 # Loop through 7 chunks of cell data
 for (i in 1:7) {
-  # Read in the current chunk
-  chunk_file <- paste0("/user/home/uy23281/scratch/rmd.results/model4/",cell.list[n],"/res.cis.", i, ".gz")
-  cell <- fread(chunk_file)
-  cell <- left_join(cell, sds, by = c("gene" = "cpg"))
-
-  # Subset the current chunk based on the clumped$cpg values
-  cell <- subset(cell, gene %in% clumped$cpg)
-
-  # Separate SNP column into chr and pos
-  cell <- cell  %>% tidyr::separate(SNP, sep = ":", into = c("chr", "pos"))
-
-  # Separate pos column into pos, a1, and a2
-  cell <- cell %>% tidyr::separate(pos, sep = "_", into = c("pos", "a1", "a2"))
-
-  # Standardize cell data
-  cell2 <- standardise(cell, "a1", "a2", "beta", "chr", "pos")
-
-  # Merge with clumped2 data
-  m <- inner_join(clumped2, cell2, by = c("snpid", "cpg" = "gene"))
-
-  # Calculate standard error
-  m$se <- m$beta / m$`t-stat`
-
-  # Append the current chunk's data to the merged_data
-  if (i == 1) {
-    merged_data <- m
-  } else {
-    merged_data <- rbind(merged_data, m)
+# Read in the current chunk
+chunk_file <- paste0("/user/home/uy23281/scratch/rmd.results/model4/",cell.list[n],"/res.cis.", i, ".gz")
+cell <- fread(chunk_file)
+cell <- left_join(cell, sds, by = c("gene" = "cpg"))
+    
+# Subset the current chunk based on the clumped$cpg values
+cell <- subset(cell, gene %in% clumped$cpg)
+    
+# Separate SNP column into chr and pos
+cell <- cell  %>% tidyr::separate(SNP, sep = ":", into = c("chr", "pos"))
+    
+# Separate pos column into pos, a1, and a2
+cell <- cell %>% tidyr::separate(pos, sep = "_", into = c("pos", "a1", "a2"))
+    
+# Standardize cell data
+cell2 <- standardise(cell, "a1", "a2", "beta", "chr", "pos")
+    
+# Merge with clumped2 data
+m <- inner_join(clumped2, cell2, by = c("snpid", "cpg" = "gene"))
+    
+# Calculate standard error
+m$se <- m$beta / m$`t-stat`
+    
+# Append the current chunk's data to the merged_data
+    if (i == 1) {
+      merged_data <- m
+    } else {
+      merged_data <- rbind(merged_data, m)
+    }
   }
-}
 # 1 Relationship between the effects
-full <- lm(Effect ~ beta, data = merged_data)
-fitted <- summary(full)$coefficients
-result_df <- data.frame(CellType = cell.list[n], Beta = fitted[2, 1], SE = fitted[2, 2],
-                        PValue = fitted[2, 4])
+  full <- lm(Effect ~ beta, data = merged_data)
+  fitted <- summary(full)$coefficients
+  result_df <- data.frame(CellType = cell.list[n], Beta = fitted[2, 1], SE = fitted[2, 2],
+                          PValue = fitted[2, 4])
+  
 #2 Overall replication rate
-prop_table <- table(merged_data$`p-value` < 0.05) %>% prop.table()
-prop_table_df <- data.frame(CellType = cell.list[n], PropTable = prop_table)
-
+  prop_table <- table(merged_data$`p-value` < 0.05) %>% prop.table()
+  prop_table_df <- data.frame(CellType = cell.list[n], PropTable = prop_table)
+  
 #3 Replication rate 
-repl <- repl_obs_exp(merged_data$Effect, merged_data$beta, merged_data$StdErr, merged_data$se, 5e-6)
-repl<-as.data.frame(repl$res)
-repl_df <- data.frame(CellType = cell.list[n], Repl = repl)
+  repl <- repl_obs_exp(merged_data$Effect, merged_data$beta, merged_data$StdErr, merged_data$se, 5e-6)
+  repl<-as.data.frame(repl$res)
+  repl_df <- data.frame(CellType = cell.list[n], Repl = repl)
   
 #Save the different data frames 
-results_list[[n]] <- result_df
-prop_table_list[[n]] <- prop_table_df
-repl_list[[n]] <- repl_df
-
-# 4 Plots
-plot <- ggplot(merged_data, aes(x = beta, y = Effect)) +
-    geom_point()
+  results_list[[n]] <- result_df
+  prop_table_list[[n]] <- prop_table_df
+  repl_list[[n]] <- repl_df
   
-plots_list[[n]] <- plot
+# 4 Plots
+  plot <- ggplot(merged_data, aes(x = beta, y = Effect)) +
+    geom_point() + labs(x=paste0("beta (",cell.list[n],")"),
+                        y="Effect (GoDMC)")
+  
+  plots_list[[n]] <- plot
 }
 
 results_df <- do.call(rbind, results_list)
 results_df<-as.data.table(results_df)
+
+prop_table_df <- do.call(rbind, prop_table_list)
+prop_table_df <- as.data.table(prop_table_df)
+
+repl_df <- do.call(rbind, repl_list)
+repl_df <- as.data.table(repl_df)
+
 ##  r function for formatting p-values
 
 format.pvalue <- function(x) {
-    formatted.x <- ifelse(x > 0.01,
-                          formatC(x, digits = 2, format = "f"),
-                          formatC(x, digits = 0))
-    return(formatted.x)
+  formatted.x <- ifelse(x > 0.01,
+                        formatC(x, digits = 2, format = "f"),
+                        formatC(x, digits = 0))
+  return(formatted.x)
 }
 results_df[, PValue := format.pvalue(PValue)]
 results_df[, Beta := formatC(Beta, digits = 4, format = "f")]
@@ -179,27 +281,152 @@ results_df[, SE := formatC(SE, digits = 4, format = "f")]
 
 #Save the plot 
 grid_plots <- grid.arrange(grobs = plots_list, ncol = 2, nrow = 2)
-ggsave(filename = "/user/home/uy23281/scratch/rmd.results/model4/Effect.plot.png", plot = grid_plots)
+ggsave(filename = "/user/home/uy23281/scratch/rmd.results/model4/Effect_plot.png", plot = grid_plots)
 ```
 
-## Look at relationship between effects
-```{r results_df, echo=FALSE}
-knitr::kable(results_df, format="latex",digits=5,booktabs=T,
-             col.names=c("Cell type","beta","SE","P-value"),align = "c",
-             caption='\\textbf{Linear model results for the relationship between GoDMC and model 4 effects}')
+```{r results_m4_df, echo=FALSE}
+print(results_df)
+#knitr::kable(results_df, format="latex",digits=5,booktabs=T,
+#             col.names=c("Cell type","beta","SE","P-value"),align = "c",
+#             caption='\\textbf{Linear model results for the relationship between GoDMC and #model 4 effects}')
 ```
 
-## Look at overall replication rate
-```{r prop_table_df, echo=FALSE}
+### Overall replication rate
+```{r prop_table_m4_df, echo=FALSE}
 print(prop_table_df)
 ```
 
-## Look at replication rate (observed vs expected)
-```{r repl_df, echo=FALSE}
+### Replication rate (observed vs expected)
+```{r repl_m4_df, echo=FALSE}
 print(repl_df)
 ```
-## Plot
-```{r plot, fig.align="center",fig.cap=c("GoDMC effect versus model 4 effect"), echo=FALSE}
-knitr::include_graphics("/user/home/uy23281/scratch/rmd.results/model4/Effect.plot.png")
-
+### Plots
+```{r plot2, out.width="80%", fig.align="center",fig.cap=c("GoDMC effect versus model 4 effect"), echo=FALSE}
+knitr::include_graphics("/user/home/uy23281/scratch/rmd.results/model4/Effect_plot.png")
 ```
+
+## Relationship between GoDMC and model 5 (bulk+int model) effects
+
+```{r, include=FALSE}
+##Loop to read and process all 100 chunks 
+# Initialize an empty data frame to store the results
+merged_data <- data.frame()
+cell.list<-c("neu","mono","tcell","bcell")
+#Create an empty list to store data frames and plots 
+results_list <- list()
+plots_list <- list()
+prop_table_list <- list()
+repl_list <- list()
+#Loop through cell types
+for (n in 1:length(cell.list)){
+  # Read standard deviation file 
+  sds<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model5/",cell.list[n],"/sd.methy.txt"),header=T,sep="\t")
+  # Loop through 7 chunks of cell data
+  for (i in 1:7) {
+    # Read in the current chunk
+    chunk_file <- paste0("/user/home/uy23281/scratch/rmd.results/model5/",cell.list[n],"/res.cis.", i, ".gz")
+    cell <- fread(chunk_file)
+    cell <- left_join(cell, sds, by = c("gene" = "cpg"))
+    
+    # Subset the current chunk based on the clumped$cpg values
+    cell <- subset(cell, gene %in% clumped$cpg)
+    
+    # Separate SNP column into chr and pos
+    cell <- cell  %>% tidyr::separate(SNP, sep = ":", into = c("chr", "pos"))
+    
+    # Separate pos column into pos, a1, and a2
+    cell <- cell %>% tidyr::separate(pos, sep = "_", into = c("pos", "a1", "a2"))
+    
+    # Standardize cell data
+    cell2 <- standardise(cell, "a1", "a2", "beta", "chr", "pos")
+    
+    # Merge with clumped2 data
+    m <- inner_join(clumped2, cell2, by = c("snpid", "cpg" = "gene"))
+    
+    # Calculate standard error
+    m$se <- m$beta / m$`t-stat`
+    
+    # Append the current chunk's data to the merged_data
+    if (i == 1) {
+      merged_data <- m
+    } else {
+      merged_data <- rbind(merged_data, m)
+    }
+  }
+  # 1 Relationship between the effects
+  full <- lm(Effect ~ beta, data = merged_data)
+  fitted <- summary(full)$coefficients
+  result_df <- data.frame(CellType = cell.list[n], Beta = fitted[2, 1], SE = fitted[2, 2],
+                          PValue = fitted[2, 4])
+  
+  #2 Overall replication rate
+  prop_table <- table(merged_data$`p-value` < 0.05) %>% prop.table()
+  prop_table_df <- data.frame(CellType = cell.list[n], PropTable = prop_table)
+  
+  #3 Replication rate 
+  repl <- repl_obs_exp(merged_data$Effect, merged_data$beta, merged_data$StdErr, merged_data$se, 5e-6)
+  repl<-as.data.frame(repl$res)
+  repl_df <- data.frame(CellType = cell.list[n], Repl = repl)
+  
+  #Save the different data frames 
+  results_list[[n]] <- result_df
+  prop_table_list[[n]] <- prop_table_df
+  repl_list[[n]] <- repl_df
+  
+  # 4 Plots
+  plot <- ggplot(merged_data, aes(x = beta, y = Effect)) +
+    geom_point() + labs(x=paste0("beta (",cell.list[n],")"),
+                        y="Effect (GoDMC)")
+  
+  plots_list[[n]] <- plot
+}
+
+results_df <- do.call(rbind, results_list)
+results_df<-as.data.table(results_df)
+
+prop_table_df <- do.call(rbind, prop_table_list)
+prop_table_df <- as.data.table(prop_table_df)
+
+repl_df <- do.call(rbind, repl_list)
+repl_df <- as.data.table(repl_df)
+
+##  r function for formatting p-values
+
+format.pvalue <- function(x) {
+  formatted.x <- ifelse(x > 0.01,
+                        formatC(x, digits = 2, format = "f"),
+                        formatC(x, digits = 0))
+  return(formatted.x)
+}
+results_df[, PValue := format.pvalue(PValue)]
+results_df[, Beta := formatC(Beta, digits = 4, format = "f")]
+results_df[, SE := formatC(SE, digits = 4, format = "f")]
+
+#Save the plot 
+grid_plots <- grid.arrange(grobs = plots_list, ncol = 2, nrow = 2)
+ggsave(filename = "/user/home/uy23281/scratch/rmd.results/model5/Effect_plot.png", plot = grid_plots)
+```
+
+```{r results_m5_df, echo=FALSE}
+print(results_df)
+#knitr::kable(results_df, format="latex",digits=5,booktabs=T,
+#             col.names=c("Cell type","beta","SE","P-value"),align = "c",
+#             caption='\\textbf{Linear model results for the relationship between GoDMC and #model 4 effects}')
+```
+
+### Overall replication rate
+```{r prop_table_m5_df, echo=FALSE}
+print(prop_table_df)
+```
+
+### Replication rate (observed vs expected)
+```{r repl_m5_df, echo=FALSE}
+print(repl_df)
+```
+### Plots
+```{r plot3, out.width="80%", fig.align="center",fig.cap=c("GoDMC effect versus model 5 effect"), echo=FALSE}
+knitr::include_graphics("/user/home/uy23281/scratch/rmd.results/model5/Effect_plot.png")
+```
+
+## Relationship between model 5 (bulk+int model) and model 4 (cell-sorted model)
+

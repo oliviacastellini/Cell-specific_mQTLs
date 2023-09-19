@@ -23,20 +23,15 @@ knitr::opts_chunk$set(echo = TRUE)
 (5) n=overlap(~60), data=bulk, model=interaction, cell-type=x4(the same as sorted), region=cis
 
 # Samples
+```{r, include=FALSE}
+library(readxl)
+table1<-read_excel("/user/home/uy23281/scratch/rmd.results/Table1_Samples.xlsx",col_names = T)
+table1<-as.data.frame(table1)
+```
 
-  |   Model   |Cell type |    N     |
-  |-----------|----------|----------|
-  | (1) & (2) |   All    |   1,086  |
-  |-----------|----------|----------|
-  |           |   Neu    |    158   |
-  |           |   Mono   |    141   |
-  |   (3)     |  Tcells  |    159   |
-  |           |  Bcells  |    100   |
-  |-----------|----------|----------|
-  |           |   Neu    |    75    |
-  |           |   Mono   |    60    |
-  | (4) & (5) |  Tcells  |    70    |
-  |           |  Bcells  |    45    |
+```{r table1, echo=FALSE}
+knitr::kable(table1,format="latex",digits=400,booktabs = T,align="c")
+```
   
 # Replication
   

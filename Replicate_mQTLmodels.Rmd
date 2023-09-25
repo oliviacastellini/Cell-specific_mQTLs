@@ -144,11 +144,11 @@ model1_merged<-model1_merged[which(model1_merged$SNP_cpg %in% model2_merged$SNP_
     ccc_results[i] <- ccc$rho.c
     
     # Count overlapping significant mQTLs
-    significant_overlap[i] <- sum(model1_merged$`p-value` < 0.05 & model2_merged$`p-value` < 0.05)
+    significant_overlap[i] <- sum(model1_merged$P < 0.05 & model2_merged$p.value < 0.05)
     
     # Plot
-    model1_merged<-model1_merged[order(model1_merged$`p-value`),]
-    model2_merged<-model2_merged[order(model2_merged$`p-value`),]
+    model1_merged<-model1_merged[order(model1_merged$P),]
+    model2_merged<-model2_merged[order(model2_merged$p.value),]
     subset_m1<-model1_merged[1:10000,]
     subset_m2<-model2_merged[1:10000,]
     

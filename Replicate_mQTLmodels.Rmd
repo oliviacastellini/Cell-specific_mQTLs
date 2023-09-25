@@ -133,7 +133,7 @@ colnames(model1_merged)<-c("SNP","cpg","beta","t","P","FDR")
 model1_merged$beta<-as.numeric(as.character(model1_merged$beta))
 
 #Extract same hit model1-SNP_cpg pairs from model1 
-model1_merged$SNP_cpg<-paste0(model1_merged$SNP,"_",model1_merged$gene)
+model1_merged$SNP_cpg<-paste0(model1_merged$SNP,"_",model1_merged$cpg)
 model1_merged<-model1_merged[which(model1_merged$SNP_cpg %in% model2_merged$SNP_cpg),]
   
     # Perform correlation analysis

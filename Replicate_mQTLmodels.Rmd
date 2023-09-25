@@ -103,11 +103,11 @@ results_list <- list() # Create a list to store the results for each chunk
 for (i in 1:length(cell_types)) {
 for (n in 1:7) {
   # Replace `chunki_data` with your actual data frame for the current chunk
-  current_chunk<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model1/",cell_types[i],"/res.cis.", n, ".gz"),header=T)
+  current_chunk<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model2/",cell_types[i],"/res.cis.", n, ".gz"),header=T)
   current_chunk$p.value<-as.numeric(as.character(current_chunk$p.value))
   # Group the data by 'cpg' and select the row with the lowest p-value in each group
  result <- current_chunk %>%
-  group_by(gene) %>%
+  group_by(SNP) %>%
   arrange(gene, SNP, p.value) %>%
   slice_min(order_by = p.value)
   
@@ -115,25 +115,26 @@ for (n in 1:7) {
   results_list[[n]] <- result
 }
 
-model1_merged <- bind_rows(results_list)
-model1_merged$beta<-as.numeric(as.character(model1_merged$beta))
-
-for (n in 1:7) {
-  # Replace `chunki_data` with your actual data frame for the current chunk
-  current_chunk<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model2/",cell_types[i],"/res.cis.", n, ".gz"),header=T)
-  current_chunk$p.value<-as.numeric(as.character(current_chunk$p.value))
-  
-  # Group the data by 'cpg' and select the row with the lowest p-value in each group
-result <- current_chunk %>%
-  group_by(gene) %>%
-  arrange(gene, SNP, p.value) %>%
-  slice_min(order_by = p.value)
-  
-  # Store the result in the list
-  results_list[[n]] <- result
-}
 model2_merged <- bind_rows(results_list)
 model2_merged$beta<-as.numeric(as.character(model2_merged$beta))
+model2_merged$SNP_cpg<-paste0(model2_merged$SNP,"_",model2_merged$gene)
+
+# Extract data for the current cell type from model 1
+  for (n in 1:7) {
+    model1<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model1/",cell_types[i],"/res.cis.", n, ".gz"))
+    if (n == 1) {
+      model1_merged <- model1
+    } else {
+      model1_merged <- rbind(model1_merged, model1)
+    }
+  }
+model1_merged<-model1_merged[-1,]
+colnames(model1_merged)<-c("SNP","cpg","beta","t","P","FDR")
+model1_merged$beta<-as.numeric(as.character(model1_merged$beta))
+
+#Extract same hit model1-SNP_cpg pairs from model1 
+model1_merged$SNP_cpg<-paste0(model1_merged$SNP,"_",model1_merged$gene)
+model1_merged<-model1_merged[which(model1_merged$SNP_cpg %in% model2_merged$SNP_cpg),]
   
     # Perform correlation analysis
     correlation_results[i] <- cor(model1_merged$beta,model2_merged$beta)

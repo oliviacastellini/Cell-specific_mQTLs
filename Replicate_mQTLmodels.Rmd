@@ -104,12 +104,12 @@ for (i in 1:length(cell_types)) {
 for (n in 1:7) {
   # Replace `chunki_data` with your actual data frame for the current chunk
   current_chunk<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model1/",cell_types[i],"/res.cis.", n, ".gz"),header=T)
-  current_chunk$`p-value`<-as.numeric(as.character(current_chunk$`p-value`))
+  current_chunk$p.value<-as.numeric(as.character(current_chunk$p.value))
   # Group the data by 'cpg' and select the row with the lowest p-value in each group
  result <- current_chunk %>%
   group_by(gene) %>%
-  arrange(gene, SNP, `p-value`) %>%
-  slice_min(order_by = `p-value`)
+  arrange(gene, SNP, p.value) %>%
+  slice_min(order_by = p.value)
   
   # Store the result in the list
   results_list[[n]] <- result
@@ -121,13 +121,13 @@ model1_merged$beta<-as.numeric(as.character(model1_merged$beta))
 for (n in 1:7) {
   # Replace `chunki_data` with your actual data frame for the current chunk
   current_chunk<-read.table(paste0("/user/home/uy23281/scratch/rmd.results/model2/",cell_types[i],"/res.cis.", n, ".gz"),header=T)
-  current_chunk$`p-value`<-as.numeric(as.character(current_chunk$`p-value`))
+  current_chunk$p.value<-as.numeric(as.character(current_chunk$p.value))
   
   # Group the data by 'cpg' and select the row with the lowest p-value in each group
 result <- current_chunk %>%
   group_by(gene) %>%
-  arrange(gene, SNP, `p-value`) %>%
-  slice_min(order_by = `p-value`)
+  arrange(gene, SNP, p.value) %>%
+  slice_min(order_by = p.value)
   
   # Store the result in the list
   results_list[[n]] <- result

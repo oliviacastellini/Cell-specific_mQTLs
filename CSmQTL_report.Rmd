@@ -291,31 +291,40 @@ cell_types <- c("neu", "mono", "tcell", "bcell")
 # Create an empty list to store the correlation results
 correlation_results <- list()
 
-# Loop through cell types
+# Loop through all combinations of cell types across models
 for (n in 1:length(cell_types)) {
-  # Subset the data frames for the current cell type
-  cell_type_data <- lapply(df_list, function(df) df[df$celltype == cell_types[n], ])
-
-  # Merge the data frames by SNP_cpg
-  merged_data <- merge(cell_type_data[[1]], cell_type_data[[2]], by = "SNP_cpg", all = FALSE)
-
-  # Extract the beta values for each data frame
-  beta_values_1 <- merged_data[!is.na(merged_data$beta.x), "beta.x"]
-  beta_values_2 <- merged_data[!is.na(merged_data$beta.y), "beta.y"]
-
-  # Calculate the pairwise correlation between beta values
-  correlation_result <- cor(beta_values_1, beta_values_2, use = "complete.obs")
-
-  # Store the correlation result in the list
-  correlation_results[[cell_types[n]]] <- correlation_result
+  for (i in 1:length(cell_types)) {
+    # Subset the data frames for the current cell types in each model
+    cell_type_data_1 <- lapply(df_list, function(df) df[df$celltype == cell_types[n], ])
+    cell_type_data_2 <- lapply(df_list, function(df) df[df$celltype == cell_types[i], ])
+    
+    # Find the common SNP_cpg pairs for the current cell types in each model
+    common_snp_cpg <- intersect(cell_type_data_1[[1]]$SNP_cpg, cell_type_data_2[[2]]$SNP_cpg)
+    
+    # Filter data frames to only include common SNP_cpg pairs
+    df1_filtered <- cell_type_data_1[[1]][cell_type_data_1[[1]]$SNP_cpg %in% common_snp_cpg, ]
+    df2_filtered <- cell_type_data_2[[2]][cell_type_data_2[[2]]$SNP_cpg %in% common_snp_cpg, ]
+    
+    # Extract the beta values for each data frame
+    beta_values_1 <- df1_filtered$beta
+    beta_values_2 <- df2_filtered$beta
+    
+    # Calculate the pairwise correlation between beta values
+    correlation_result <- cor(beta_values_1, beta_values_2, use = "complete.obs")
+    
+    # Store the correlation result in the list with a meaningful label
+    correlation_results[[paste(cell_types[n], "vs", cell_types[i])]] <- correlation_result
+  }
 }
+
+
 ```
 
 ```{r correlation_results, echo=FALSE}
 # Print the correlation results
-for (cell_type in cell_types) {
-  cat("Cell Type:", cell_type, "\n")
-  cat("Correlation between models:", correlation_results[[cell_type]], "\n")
+for (correlation_label in names(correlation_results)) {
+  cat("Cell Types:", correlation_label, "\n")
+  cat("Correlation between models:", correlation_results[[correlation_label]], "\n")
 }
 ```
 

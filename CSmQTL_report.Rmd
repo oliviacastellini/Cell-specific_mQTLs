@@ -279,6 +279,9 @@ print(results_df)
 ### Model1 and model 4 
 ```{r, include=FALSE}
 load("/user/home/uy23281/scratch/rmd.results/model1/model1_extracted.RData")
+m4_sig$SNP_cpg<-paste0(m4_sig$SNP,"_",m4_sig$gene)
+m1_sig$SNP_cpg<-paste0(m1_sig$SNP,"_",m1_sig$gene)
+
 # Create a list of your data frames (assuming you have already loaded them)
 df_list <- list(m4_sig, m1_sig)  # Replace df1 and df2 with your actual data frames
 
@@ -289,24 +292,30 @@ cell_types <- c("neu", "mono", "tcell", "bcell")
 correlation_results <- list()
 
 # Loop through cell types
-for(n in 1:length(cell_types)) {
+for (n in 1:length(cell_types)) {
   # Subset the data frames for the current cell type
   cell_type_data <- lapply(df_list, function(df) df[df$celltype == cell_types[n], ])
 
+  # Merge the data frames by SNP_cpg
+  merged_data <- merge(cell_type_data[[1]], cell_type_data[[2]], by = "SNP_cpg", all = FALSE)
+
   # Extract the beta values for each data frame
-  beta_values <- lapply(cell_type_data, function(df) df$beta)
+  beta_values_1 <- merged_data[!is.na(merged_data$beta.x), "beta.x"]
+  beta_values_2 <- merged_data[!is.na(merged_data$beta.y), "beta.y"]
 
   # Calculate the pairwise correlation between beta values
-  correlations <- cor(beta_values[[1]], beta_values[[2]])
+  correlation_result <- cor(beta_values_1, beta_values_2, use = "complete.obs")
 
   # Store the correlation result in the list
-  correlation_results[[cell_types[n]]] <- correlations
+  correlation_results[[cell_types[n]]] <- correlation_result
 }
+```
 
+```{r correlation_results, echo=FALSE}
 # Print the correlation results
-for (n in 1:length(cell_types)) {
+for (cell_type in cell_types) {
   cat("Cell Type:", cell_type, "\n")
-  cat("Correlation between models:", correlation_results[[cell_type[n]]], "\n")
+  cat("Correlation between models:", correlation_results[[cell_type]], "\n")
 }
 ```
 

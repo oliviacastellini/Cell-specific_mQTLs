@@ -1,0 +1,312 @@
+---
+title: "Replication of mQTLs associations across contexts"
+author: Olivia Castellini-Pérez
+date: October 30, 2023
+abstract: ""
+output:  
+  bookdown::pdf_book:
+  keep_tex: true
+fig_caption: yes
+toc: true
+---
+  
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Models 
+
+(1) n=all, data=bulk, model=interaction, cell-type=x4(salas), region=cis, cell-count=predicted
+(2) n=all, data=bulk, model=interaction, cell-type=x4(salas), region=cis, cell-count=observed
+(3) n=all, data=cell-specific, model=main, cell-type=x4(sorted), region=cis
+(4) n=overlap(~60), data=cell-specific, model=main, cell-type=x4(sorted), region=cis
+(5) n=overlap(~60), data=bulk, model=interaction, cell-type=x4(the same as sorted), region=cis
+
+# Samples
+```{r, include=FALSE}
+library(readxl)
+table1<-read_excel("/user/home/uy23281/scratch/rmd.results/Table1_Samples.xlsx",col_names = T)
+table1<-as.data.frame(table1)
+```
+
+```{r table1, echo=FALSE}
+knitr::kable(table1,format="latex",digits=400,booktabs = T,align="c")
+```
+  
+# Replication
+  
+  1. Are the GoDMC SNP-CpG pairs replicating in bulk+int?
+  2. Are the GoDMC SNP-CpG pairs replicating in cell-specific? 
+  3. Discovery in bulk+int replicating in cell-specific?  
+  4. Discovery in cell-specific replicating in bulk?
+  5. Any pvalues from mod1 or mod2 with FDR < 0.05?
+  
+True positives:
+1. Get cell-specific associations in model 3 - use FDR < 0.05 for heterogeneity test
+2. Look to see if they replicate in predicted cell counts (model 1)
+False positives:
+1. Get cell-specific associations in predicted cell counts (model 1)
+2. Replication in model 3
+
+## GoDMC SNP-CpG pairs replication
+  
+```{r, include=FALSE}
+library(dplyr)
+library(data.table)
+library(tidyr)
+library(ggplot2)
+library(gridExtra)
+library(epiR)
+library(stats)
+library(car)
+```
+
+```{r, include=FALSE}
+standardise <- function(d, ea="ea", oa="oa", beta="beta", chr="chr", pos="pos") {
+  toflip <- d[[ea]] > d[[oa]]
+  d[[beta]][toflip] <- d[[beta]][toflip] * -1
+  temp <- d[[oa]][toflip]
+  d[[oa]][toflip] <- d[[ea]][toflip]
+  d[[ea]][toflip] <- temp
+  d[["snpid"]] <- paste0(d[[chr]], ":", d[[pos]], "_", toupper(d[[ea]]), "_", toupper(d[[oa]]))
+  d
+}
+
+repl_obs_exp <- function(b_disc, b_rep, se_disc, se_rep, alpha) {
+  p_sign <- pnorm(-abs(b_disc) / se_disc) * pnorm(-abs(b_disc) / se_rep) + ((1 - pnorm(-abs(b_disc) / se_disc)) * (1 - pnorm(-abs(b_disc) / se_rep)))
+  p_sig <- pnorm(-abs(b_disc) / se_rep + qnorm(alpha / 2)) + (1 - pnorm(-abs(b_disc) / se_rep - qnorm(alpha / 2)))
+  p_rep <- pnorm(abs(b_rep)/se_rep, lower.tail=FALSE)
+  res <- tibble::tibble(
+    nsnp=length(b_disc),
+    metric=c("Sign", "Sign", "P-value", "P-value"),
+    datum=c("Expected", "Observed", "Expected", "Observed"),
+    value=c(sum(p_sign, na.rm=TRUE), sum(sign(b_disc) == sign(b_rep)), sum(p_sig, na.rm=TRUE), sum(p_rep < alpha, na.rm=TRUE))
+  )
+  return(list(res=res, variants=dplyr::tibble(sig=p_sig, sign=p_sign)))
+}
+
+# Read in clumped
+load("/user/home/uy23281/scratch/16_clumped.rdata")
+#load("/home/uy23281/data/16_clumped.rdata")
+# Organise data
+clumped <- ungroup(clumped)
+clumped$snpchr <- gsub("chr", "", clumped$snpchr)
+clumped2 <- standardise(clumped, "Allele2", "Allele1", "Effect", "snpchr", "snppos")
+
+```
+
+# Results
+## Relationship between GoDMC and cell-sorted model effects
+```{r, include=FALSE}
+# Reading sd file
+sds<-read.table("/user/home/uy23281/scratch/rmd.results/model4/neu/sd.methy.txt",header=T,sep="\t")
+
+# Reading results 
+load("/user/home/uy23281/scratch/rmd.results/model4/model4_extracted.RData")
+cell <- left_join(m4_sig, sds, by = c("gene" = "cpg"))
+    
+# Subset based on the clumped$cpg values
+cell <- subset(cell, gene %in% clumped$cpg)
+    
+# Separate SNP column into chr and pos
+cell <- cell  %>% tidyr::separate(SNP, sep = ":", into = c("chr", "pos"))
+    
+# Separate pos column into pos, a1, and a2
+cell <- cell %>% tidyr::separate(pos, sep = "_", into = c("pos", "a1", "a2"))
+    
+# Standardize cell data
+cell2 <- standardise(cell, "a1", "a2", "beta", "chr", "pos")
+    
+# Merge with clumped2 data
+m <- inner_join(clumped2, cell2, by = c("snpid", "cpg" = "gene"))
+    
+# Calculate standard error
+m$se <- m$beta / m$`t-stat`
+m$se_std<-m$se/m$sd
+m$beta_std<-m$beta/m$sd
+
+# 1 Relationship between the effects
+# Create separate data frames for each analysis
+results_lm <- data.frame()
+results_prop_table <- data.frame()
+results_repl_rate <- data.frame()
+
+# Get unique cell types from your data
+unique_celltypes <- unique(m$celltype)
+
+for (celltype in 1:length(unique_celltypes)) {
+  # Subset the data based on the celltype condition
+ subset_data <- m[m$celltype == unique_celltypes[celltype], ]
+  
+  # 1. Linear regression
+  full <- lm(beta_std ~ Effect, data = subset_data)
+  fitted <- summary(full)$coefficients
+  result_row_lm <- data.frame(CellType = unique_celltypes[celltype], Beta = fitted[2, 1], SE = fitted[2, 2], PValue = fitted[2, 4])
+  results_lm <- rbind(results_lm, result_row_lm)
+  
+  # 2. Overall replication rate
+  prop_table <- table(subset_data$`p-value` < 0.05) %>% prop.table()
+  prop_table_row <- data.frame(CellType = unique_celltypes[celltype], PropTable = prop_table)
+  results_prop_table <- rbind(results_prop_table, prop_table_row)
+  
+  # 3. Replication rate
+  repl <- repl_obs_exp(subset_data$Effect, subset_data$beta_std, subset_data$StdErr, subset_data$se_std, 5e-6)
+  repl_df <- as.data.frame(repl$res)
+  repl_row <- data.frame(CellType = unique_celltypes[celltype], Model = "Replication Rate", Repl = repl_df)
+  results_repl_rate <- rbind(results_repl_rate, repl_row)
+}
+
+##  r function for formatting p-values
+# 
+# format.pvalue <- function(x) {
+#   formatted.x <- ifelse(x > 0.01,
+#                         formatC(x, digits = 2, format = "f"),
+#                         formatC(x, digits = 0))
+#   return(formatted.x)
+# }
+# results_df[, PValue := format.pvalue(PValue)]
+# results_df[, Beta := formatC(Beta, digits = 4, format = "f")]
+# results_df[, SE := formatC(SE, digits = 4, format = "f")]
+
+#Save the plot 
+# grid_plots <- grid.arrange(grobs = plots_list, ncol = 2, nrow = 2)
+# ggsave(filename = "/user/home/uy23281/scratch/rmd.results/model4/Effect_plot.png", plot = grid_plots)
+```
+
+### Linear regression between GoDMC and m4 effects
+```{r results_m4_df, echo=FALSE}
+print(results_lm)
+```
+
+### Overall replication rate
+```{r prop_table_m4_df, echo=FALSE}
+print(results_prop_table)
+```
+
+### Replication rate (observed vs expected)
+```{r repl_m4_df, echo=FALSE}
+print(results_repl_rate)
+```
+
+### Plots
+```{r plot2, out.width="80%", fig.align="center",fig.cap=c("GoDMC effect versus model 4 effect"), echo=FALSE}
+knitr::include_graphics("/user/home/uy23281/scratch/rmd.results/model4/Effect_plot.png")
+
+```
+
+## Heterogeneity test for each cell in model 3 
+### Cell-specific associations for netrophils model 3 
+```{r include=FALSE}
+# For neutrophils
+load("/user/home/uy23281/scratch/rmd.results/model4/model4_extracted.RData")
+input_df<-m4_sig
+input_df$SNP_cpg<-paste0(input_df$SNP,"_",input_df$gene)
+
+# Create an empty list to store the results for each cell type
+results_list <- list()
+
+# Define a vector of cell types
+cell_types <- c("neu", "bcell", "tcell", "monocytes")
+
+ # Read the function for the heterogeneity test
+  fixed_effects_meta_analysis <- function(beta_vec, se_vec) {
+    w <- 1 / se_vec^2
+    beta <- sum(beta_vec * w, na.rm=T) / sum(w, na.rm=T)
+    se <- sqrt(1 / sum(w, na.rm=T))
+    pval <- pnorm(abs(beta / se), lower.tail = FALSE)
+    Qj <- w * (beta-beta_vec)^2
+    Q <- sum(Qj, na.rm=T)
+    Qdf <- sum(!is.na(beta_vec))-1
+    if(Qdf == 0) Q <- 0
+    Qjpval <- pchisq(Qj, 1, lower.tail=FALSE)
+    Qpval <- pchisq(Q, Qdf, lower.tail=FALSE)
+    return(list(beta=beta, se=se, Q=Q, Qdf=Qdf, Qpval=Qpval, Qj=Qj, Qjpval=Qjpval))
+}
+# Loop through each cell type
+for (n in 1:length(cell_types)) {
+  # Create an empty data frame to store the results for the current cell type
+  results_df <- data.frame(
+    SNP_cpg = character(0),
+    celltype = character(0),
+    beta = numeric(0),
+    se = numeric(0),
+    Q = numeric(0),
+    Qdf = numeric(0),
+    Qjpval = numeric(0),
+    Qj = numeric(0),
+    Qpval = numeric(0)
+  )
+
+  # Find unique SNP_cpg combinations for the current cell type
+  unique_combinations <- unique(input_df$SNP_cpg[input_df$celltype == cell_type[n]])
+  
+  # Loop through each unique SNP_cpg combination
+  for (snp_cpg_combination in 1:length(unique_combinations)) {
+    # Filter the data frame for the current SNP_cpg combination and cell type
+    subset_data <- input_df[input_df$SNP_cpg == unique_combinations[snp_cpg_combination] & 
+                                   input_df$celltype == cell_type[n], ]
+    
+    beta_vec <- subset_data$beta
+    se_vec <- subset_data$se
+    
+    result <- fixed_effects_meta_analysis(beta_vec, se_vec)
+    
+    # Add the results to the data frame for the current cell type
+    results_df <- rbind(results_df, data.frame(
+      SNP_cpg = unique_combinations[snp_cpg_combination],
+      celltype = cell_type,
+      beta = result$beta,
+      se = result$se,
+      Q = result$Q,
+      Qdf = result$Qdf,
+      Qjpval = result$Qjpval,
+      Qj = result$Qj,
+      Qpval = result$Qpval
+    ))
+  }
+  
+  # Store the results data frame in the results list
+  results_list[[cell_type[n]]] <- results_df
+}
+
+```
+
+```{r results_matrix, echo=FALSE}
+print(results_df)
+```
+
+## Correlations between models 
+### Model1 and model 4 
+```{r, include=FALSE}
+load("/user/home/uy23281/scratch/rmd.results/model1/model1_extracted.RData")
+# Create a list of your data frames (assuming you have already loaded them)
+df_list <- list(m4_sig, m1_sig)  # Replace df1 and df2 with your actual data frames
+
+# List of cell types
+cell_types <- c("neu", "mono", "tcell", "bcell")
+
+# Create an empty list to store the correlation results
+correlation_results <- list()
+
+# Loop through cell types
+for(n in 1:length(cell_types)) {
+  # Subset the data frames for the current cell type
+  cell_type_data <- lapply(df_list, function(df) df[df$celltype == cell_types[n], ])
+
+  # Extract the beta values for each data frame
+  beta_values <- lapply(cell_type_data, function(df) df$beta)
+
+  # Calculate the pairwise correlation between beta values
+  correlations <- cor(beta_values[[1]], beta_values[[2]])
+
+  # Store the correlation result in the list
+  correlation_results[[cell_types[n]]] <- correlations
+}
+
+# Print the correlation results
+for (n in 1:length(cell_types)) {
+  cat("Cell Type:", cell_type, "\n")
+  cat("Correlation between models:", correlation_results[[cell_type[n]]], "\n")
+}
+```
+

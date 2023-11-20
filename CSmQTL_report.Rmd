@@ -13,16 +13,9 @@ toc: true
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+# Methods
+## Samples
 
-# Models 
-
-(1) n=all, data=bulk, model=interaction, cell-type=x4(salas), region=cis, cell-count=predicted
-(2) n=all, data=bulk, model=interaction, cell-type=x4(salas), region=cis, cell-count=observed
-(3) n=all, data=cell-specific, model=main, cell-type=x4(sorted), region=cis
-(4) n=overlap(~60), data=cell-specific, model=main, cell-type=x4(sorted), region=cis
-(5) n=overlap(~60), data=bulk, model=interaction, cell-type=x4(the same as sorted), region=cis
-
-# Samples
 ```{r, include=FALSE}
 library(readxl)
 table1<-read_excel("/user/home/uy23281/scratch/rmd.results/Table1_Samples.xlsx",col_names = T)
@@ -32,7 +25,15 @@ table1<-as.data.frame(table1)
 ```{r table1, echo=FALSE}
 knitr::kable(table1,format="latex",digits=400,booktabs = T,align="c")
 ```
-  
+ 
+## Models 
+
+(1) n=all, data=bulk, model=interaction, cell-type=x4(salas), region=cis, cell-count=predicted
+(2) n=all, data=bulk, model=interaction, cell-type=x4(salas), region=cis, cell-count=observed
+(3) n=all, data=cell-specific, model=main, cell-type=x4(sorted), region=cis
+(4) n=overlap(~60), data=cell-specific, model=main, cell-type=x4(sorted), region=cis
+(5) n=overlap(~60), data=bulk, model=interaction, cell-type=x4(the same as sorted), region=cis
+
 # Replication
   
   1. Are the GoDMC SNP-CpG pairs replicating in bulk+int?
@@ -59,6 +60,10 @@ library(gridExtra)
 library(epiR)
 library(stats)
 library(car)
+library(forestplot)
+library(gridExtra)
+library(cowplot)
+library(png)
 ```
 
 ```{r, include=FALSE}
@@ -194,19 +199,12 @@ knitr::include_graphics("/user/home/uy23281/scratch/rmd.results/model4/Effect_pl
 
 ```
 
-## Heterogeneity test for each cell in model 3 
-### Cell-specific associations for netrophils model 3 
+## Heterogeneity test for each cell in model 3
+### Cell-specific associations for netrophils model 3
 ```{r include=FALSE}
 # For neutrophils
 load("/user/home/uy23281/scratch/rmd.results/model4/model4_extracted.RData")
-input_df<-m4_sig
-input_df$SNP_cpg<-paste0(input_df$SNP,"_",input_df$gene)
-
-# Create an empty list to store the results for each cell type
-results_list <- list()
-
-# Define a vector of cell types
-cell_types <- c("neu", "bcell", "tcell", "monocytes")
+m4_sig$se<- m4_sig$beta / m4_sig$`t-stat`
 
  # Read the function for the heterogeneity test
   fixed_effects_meta_analysis <- function(beta_vec, se_vec) {
@@ -221,69 +219,192 @@ cell_types <- c("neu", "bcell", "tcell", "monocytes")
     Qjpval <- pchisq(Qj, 1, lower.tail=FALSE)
     Qpval <- pchisq(Q, Qdf, lower.tail=FALSE)
     return(list(beta=beta, se=se, Q=Q, Qdf=Qdf, Qpval=Qpval, Qj=Qj, Qjpval=Qjpval))
+  }
+
+subset(m4_sig, SNP==SNP[1] & gene==gene[1])
+temp <- subset(m4_sig, SNP==SNP[1] & gene==gene[1])
+result<-fixed_effects_meta_analysis(temp$beta, temp$se)
+m4_sig$code <- paste(m4_sig$SNP, m4_sig$gene)
+
+out <- group_by(m4_sig, code) %>% do({temp <- .; 
+r <- fixed_effects_meta_analysis(temp$beta, temp$se); 
+tibble(beta=r$beta, se=r$se, Q=r$Q, Qdf=r$Qdf, Qpval=r$Qpval)})
+
+#Forest plot by single SNP_cpg pairs  
+plot_het <- function(m4_sig, cpgsnp) {
+    subset(m4_sig, code == cpgsnp) %>%
+    ggplot(., aes(x=beta, y = celltype)) +
+    geom_point() +
+    geom_errorbarh(aes(xmin=beta - 1.96*se, xmax=beta+1.96*se))+
+    ggtitle(paste0("Model 4 (",cpgsnp,")"))
 }
-# Loop through each cell type
-for (n in 1:length(cell_types)) {
-  # Create an empty data frame to store the results for the current cell type
-  results_df <- data.frame(
-    SNP_cpg = character(0),
-    celltype = character(0),
-    beta = numeric(0),
-    se = numeric(0),
-    Q = numeric(0),
-    Qdf = numeric(0),
-    Qjpval = numeric(0),
-    Qj = numeric(0),
-    Qpval = numeric(0)
+ 
+out$fdr <- p.adjust(out$Qpval, "fdr")
+sighet <- subset(out, fdr < 0.05) %>% arrange(Qpval)
+
+# Heterogeneity per celltype 
+outj <- m4_sig %>% group_by(code) %>% do({
+    x <- .
+    r <- fixed_effects_meta_analysis(.$beta, .$se)
+    tibble(code = .$code, celltype=.$celltype, qjpval = r$Qjpval)
+})
+
+outj_maxhet <- outj %>% group_by(code) %>%
+    arrange(qjpval) %>%
+    slice_head(n=1)
+
+# Getting standard deviation for each cpg and celltype
+celltypes <- c("neu", "mono", "tcell", "bcell")
+results_list <- lapply(celltypes, function(x) {
+file_path <- paste0("/user/home/uy23281/scratch/rmd.results/model4/sd.methy_",x,".txt")
+data <- fread(file_path)
+data$celltype <- x
+return(data)
+})
+
+sd_df <- bind_rows(results_list)
+
+# Extract unique cg ids and corresponding cell types
+df_unique <- outj %>%
+  mutate(cg_id = gsub(".* ", "", code)) %>%
+  ungroup() %>%
+  select(code,cg_id,celltype,qjpval)
+
+# Merge with the standard deviation data frame
+sd_df_unique <- inner_join(df_unique, sd_df, by = c("cg_id"="cpg","celltype"),multiple="all")
+
+# Merging sd with sighet results
+outj_maxhet<-outj_maxhet %>%
+  mutate(cg_id=gsub(".* ", "", code)) 
+
+maxhet_sd<-inner_join(outj_maxhet,sd_df,by=c("cg_id"="cpg","celltype"),multiple="all") %>%
+  arrange(qjpval) %>%
+  select(code,celltype,qjpval,cg_id,sd) %>%
+  slice_head(n=1)
+
+```
+
+```{r,echo=FALSE}
+out 
+outj
+outj_maxhet
+table(p.adjust(out$Qpval, "fdr") < 0.05)
+par(mfrow=c(2,2))
+plot_het(m4_sig, sighet$code[1]) # Change the number to select another SNP-CpG pair
+plot_het(m4_sig, sighet$code[2])
+plot_het(m4_sig, sighet$code[3])
+plot_het(m4_sig, sighet$code[4])
+```
+*Question*: Are the ones with the biggest heterogeneity the one with smallest or highest standard deviation ?
+
+```{r,echo=FALSE}
+sd_df_unique
+maxhet_sd
+
+```
+
+## Correlations between models
+### Model 4 hits with most heterogeneity vs model 1 
+```{r, include=FALSE}
+# Extract 100 SNP_cpg pairs with most heterogeneity in model 4
+sighet_100<-sighet[1:100,]
+snpscpg_het<-sighet_100$code
+
+# Extract list SNP_CpG from model 1 results per cell type
+results_list <- lapply(celltypes, function(x) {
+  chunk_list <- lapply(1:7, function(y) {
+    file_path <- paste0("/user/home/uy23281/scratch/rmd.results/model1/", x, "/res.cis.", y, ".gz")
+    data <- fread(file_path)
+    data_filtered <- data %>%
+      filter(paste0(SNP," ",gene) %in% snpscpg_het)
+    
+    data_filtered$celltype <- x
+    data_filtered
+  })
+  bind_rows(chunk_list)
+})
+
+m1_sighet <- bind_rows(results_list)
+
+m1_sighet$code <- paste(m1_sighet$SNP, m1_sighet$gene)
+m1_sighet$se<- m1_sighet$beta / m1_sighet$`t-stat`
+
+# Function to create the plot
+# plot_function <- function(df, model_name,cpg_snp) {
+#   ggplot(df, aes(x = beta, y = celltype)) +
+#     geom_point() +
+#     geom_errorbarh(aes(xmin = beta - 1.96 * se, xmax = beta + 1.96 * se)) +
+#     ggtitle(model_name) + xlab(paste0("beta (",cpg_snp,")"))
+# }
+# 
+# num_examples <- 10
+# 
+# # Create a directory to save individual plots
+# dir.create("/user/home/uy23281/scratch/rmd.results/individual_plots", showWarnings = FALSE)
+# 
+# # Loop through each example
+# for (i in 1:num_examples) {
+#   # Assuming cpg_snp is unique for each example
+#   cpg_snp <- unique(m1_sighet$code)[i]
+#   
+#   # Subset data frames for the specific cpg_snp
+#   subset_model1 <- subset(m1_sighet, code == cpg_snp)
+#   subset_model2 <- subset(m4_sig, code == cpg_snp)
+#   
+#   # Create plots for each model
+#   plot_model1 <- plot_function(subset_model1, "Model 1",cpg_snp)
+#   plot_model2 <- plot_function(subset_model2, "Model 2",cpg_snp)
+#   
+#   # Save each plot with a unique filename
+#   ggsave(paste0("/user/home/uy23281/scratch/rmd.results/individual_plots/plot_", i, "_model1.png"), plot_model1)
+#   ggsave(paste0("/user/home/uy23281/scratch/rmd.results/individual_plots/plot_", i, "_model2.png"), plot_model2)
+# }
+# 
+# # Function to read and arrange images for a specific plot
+combine_plot_images <- function(plot_number) {
+  # List of PNG file names for model1 and model2
+  model1_files <- sprintf("/user/home/uy23281/scratch/rmd.results/individual_plots/plot_%d_model1.png", plot_number)
+  model2_files <- sprintf("/user/home/uy23281/scratch/rmd.results/individual_plots/plot_%d_model2.png", plot_number)
+
+  # Read images for model1 and model2
+  model1_image <- png::readPNG(model1_files)
+  model2_image <- png::readPNG(model2_files)
+
+  # Combine images for model1 and model2
+  combined_row <- grid.arrange(
+    grid::rasterGrob(model1_image),
+    grid::rasterGrob(model2_image),
+    ncol = 2
   )
 
-  # Find unique SNP_cpg combinations for the current cell type
-  unique_combinations <- unique(input_df$SNP_cpg[input_df$celltype == cell_type[n]])
-  
-  # Loop through each unique SNP_cpg combination
-  for (snp_cpg_combination in 1:length(unique_combinations)) {
-    # Filter the data frame for the current SNP_cpg combination and cell type
-    subset_data <- input_df[input_df$SNP_cpg == unique_combinations[snp_cpg_combination] & 
-                                   input_df$celltype == cell_type[n], ]
-    
-    beta_vec <- subset_data$beta
-    se_vec <- subset_data$se
-    
-    result <- fixed_effects_meta_analysis(beta_vec, se_vec)
-    
-    # Add the results to the data frame for the current cell type
-    results_df <- rbind(results_df, data.frame(
-      SNP_cpg = unique_combinations[snp_cpg_combination],
-      celltype = cell_type,
-      beta = result$beta,
-      se = result$se,
-      Q = result$Q,
-      Qdf = result$Qdf,
-      Qjpval = result$Qjpval,
-      Qj = result$Qj,
-      Qpval = result$Qpval
-    ))
-  }
-  
-  # Store the results data frame in the results list
-  results_list[[cell_type[n]]] <- results_df
+  # Return the combined row
+  return(combined_row)
 }
 
+# pdf("/user/home/uy23281/scratch/rmd.results/combined_image.pdf",width = 14, height = 8)
+# Combine images for each plot
+for (plot_number in 1:10) {
+  # Generate the combined plot
+  combined_plot <- combine_plot_images(plot_number)
+  
+  # Print the combined plot to the PDF
+  grid.draw(combined_plot)
+}
+
+# Close the PDF device
+# dev.off()
+
 ```
 
-```{r results_matrix, echo=FALSE}
-print(results_df)
-```
-
-## Correlations between models 
-### Model1 and model 4 
+### Model1 and model2
 ```{r, include=FALSE}
 load("/user/home/uy23281/scratch/rmd.results/model1/model1_extracted.RData")
-m4_sig$SNP_cpg<-paste0(m4_sig$SNP,"_",m4_sig$gene)
+load("/user/home/uy23281/scratch/rmd.results/model2/model2_extracted.RData")
+m2_sig$SNP_cpg<-paste0(m2_sig$SNP,"_",m2_sig$gene)
 m1_sig$SNP_cpg<-paste0(m1_sig$SNP,"_",m1_sig$gene)
 
 # Create a list of your data frames (assuming you have already loaded them)
-df_list <- list(m4_sig, m1_sig)  # Replace df1 and df2 with your actual data frames
+df_list <- list(m2_sig, m1_sig)  # Replace df1 and df2 with your actual data frames
 
 # List of cell types
 cell_types <- c("neu", "mono", "tcell", "bcell")
@@ -317,7 +438,6 @@ for (n in 1:length(cell_types)) {
   }
 }
 
-
 ```
 
 ```{r correlation_results, echo=FALSE}
@@ -328,3 +448,123 @@ for (correlation_label in names(correlation_results)) {
 }
 ```
 
+## mashr 
+```{r, include=FALSE}
+## https://stephenslab.github.io/mashr/articles/intro_mash.html#step-2-set-up-the-covariance-matrices
+library(mashr)
+library(tidyr)
+library(corrplot)
+#Reading mashr prepared data significant top SNP_CpG pairs and 20,000 null SNP-Cpgs per cell type
+load("/user/home/uy23281/scratch/rmd.results/mashr/mashr_m4.RData")
+# Preparing data in right format
+## Subsetting colmuns 
+mashr_m4$snp_cpg<-paste0(mashr_m4$SNP,"_",mashr_m4$gene)
+mashr_m4$se<- mashr_m4$beta / mashr_m4$`t-stat`
+mashr_m4<-mashr_m4[order(mashr_m4$celltype),]
+
+duplicates <- mashr_m4[duplicated(mashr_m4[c("snp_cpg", "celltype")]) & mashr_m4$celltype %in% unique(mashr_m4$celltype), ]
+mashr_m4_unique <- mashr_m4 %>%
+  distinct(snp_cpg, celltype, .keep_all = TRUE)
+
+se_df<-subset(mashr_m4_unique,select=c("snp_cpg","se","celltype"))
+beta_df<-subset(mashr_m4_unique,select=c("snp_cpg","beta","celltype"))
+
+## Reshape the data frame
+reshaped_beta <- spread(beta_df, key = celltype, value = beta)
+reshaped_beta<-na.omit(reshaped_beta)
+rownames(reshaped_beta)<-reshaped_beta[,1]
+reshaped_beta<-reshaped_beta[,-1]
+
+reshaped_se <- spread(se_df, key = celltype, value = se)
+reshaped_se<-na.omit(reshaped_se)
+rownames(reshaped_se)<-reshaped_se[,1]
+reshaped_se<-reshaped_se[,-1]
+
+reshaped_df <- list(
+  Beta = reshaped_beta,
+  SE = reshaped_se
+)
+
+## mashr needs matrix 
+reshaped_df$Beta <- as.matrix(reshaped_df$Beta)
+reshaped_df$SE <- as.matrix(reshaped_df$SE)
+```
+
+```{r,echo=TRUE}
+
+# Step 1: Select strong signals. 
+## Running a condition-by-condition (1by1) analysis on all the data
+data = mash_set_data(reshaped_df$Beta, reshaped_df$SE)
+m.1by1 = mash_1by1(data)
+strong = get_significant_results(m.1by1,0.05)
+## This sets up a vector strong containing the indices corresponding to 
+## the significant rows of the tests results in data. 
+
+# Step 2: Obtain initial data-driven covariance matrices  
+## Here we use the function cov_pca to produce covariance matrices based on the 
+## top 4 PCs of the strong signals. The result is a list of 6 covariance matrices: 
+## one based on all 4 PCs, and the others each based on one PC
+U.pca = cov_pca(data,4,subset=strong)
+print(names(U.pca)) 
+
+## Note that the number of conditions in the data is greater than or equal to 
+## the number of principal components we are trying to compute. 
+
+# Step 3: Apply Extreme Deconvolution
+## Use these data-driven covariance matrices as initializations for the extreme
+## deconvolution (ED) algorithm (using cov_ed), to get some refined data-driven 
+## covariance matrix estimates
+U.ed = cov_ed(data, U.pca, subset=strong)
+
+# Step 4: Calculate canonical covariances
+U.c = cov_canonical(data)  
+
+# Step 5: Run mash with both data-driven covariances and canonical covariances
+m.c    = mash(data, U.c)
+m.ed   = mash(data, U.ed)
+m   = mash(data, c(U.c,U.ed))
+print(get_loglik(m.c),digits = 10)
+print(get_loglik(m.ed),digits = 10)
+print(get_loglik(m),digits = 10)
+
+```
+When running mashr it is recommended to fit with both data-driven and canonical covariances. This can be easily checked observing the log likelihood values. The biggest number would indicate the best fit so using both covariances methods. 
+We now can use **get_significant_results()** to find the indices of effects that are “significant”, which here means they have **lfsr** less than t in at least one condition, where t is a threshold you specify (default 0.05). The output is ordered from most significant to least significant.
+
+```{r, include=FALSE}
+# png(file="/user/home/uy23281/scratch/rmd.results/barplot_mshr_m4.png")
+# barplot(get_estimated_pi(m.c),las = 2)
+# dev.off()
+# 
+# png(file="/user/home/uy23281/scratch/rmd.results/sigres_mshr_m4.png")
+# mash_plot_meta(m.c,get_significant_results(m.c)[1])
+# dev.off()
+
+# If we fit the mash model without the posterior samples, we could use mash_compute_posterior_matrices to sample from the mash object.
+# https://ftp.yz.yamagata-u.ac.jp/pub/math/cran/web/packages/mashr/vignettes/mash_sampling.html
+
+#Correlation plot 
+x = get_pairwise_sharing(m, factor=0.5)
+#
+# png(file="/user/home/uy23281/scratch/rmd.results/corrplot_mshr_m4.png")
+# corrplot(x, method='color', col.lim=c(0,1), type='upper', addCoef.col = "black", tl.col="black", tl.srt=45, title = 'Pairwise Sharing by Magnitude', mar = c(4,0,4,0))
+# dev.off()
+```
+
+
+```{r,echo=FALSE}
+head(get_significant_results(m.c))
+```
+To extract the estimates of the mixture proportions for different types of covariance matrix we can use **get_estimated_pi()** function and plot the estimates. 
+
+```{r,echo=FALSE}
+# Plots
+print(get_estimated_pi(m.c))
+barplot(get_estimated_pi(m.c),las = 2)
+
+```
+There is another function in mashr package, **get_pairwise_sharing()** that compute the proportion of significant signals shared by magnitude in the estimated effect sizes, for each pair of conditions. For each pair of conditions, first identify the effects that are significant in at least one of the two conditions. Then compute what fraction of these have an estimated (posterior mean) effect size within a factor factor of one another.
+
+```{r,echo=FALSE}
+corrplot(x, method='color', col.lim=c(0,1), type='upper', addCoef.col = "black", tl.col="black", tl.srt=45, title = 'Pairwise Sharing by Magnitude', mar = c(4,0,4,0))
+```
